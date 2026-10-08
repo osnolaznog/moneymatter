@@ -12,10 +12,13 @@ The MCP tools `create_transaction` and `update_transaction` accept three fields 
 | `externalReference` | string, max 255 | Stores an external ID, e.g. a MODO or bank operation ID. | Same. `null` clears it. |
 | `externalUrl` | http(s) URL, max 2048 | Stores a related URL, e.g. a receipt or order page. | Same. `null` clears it. |
 
+Tools that return transactions through the shared MCP serializer (for example `search_transactions`) now also include `payeeId`, `externalReference` and `externalUrl` in each transaction, so clients can read back what they wrote.
+
 Files touched:
 
 - `packages/backend/src/services/mcp/tools/create-transaction.ts`: new schema fields, passed to `deserializeCreateTransaction`.
 - `packages/backend/src/services/mcp/tools/update-transaction.ts`: new schema fields, passed to `updateTransaction`.
+- `packages/backend/src/services/mcp/serializers.ts` (+ its unit test): the three fields added to `slimTransactionsForMcp`.
 - `packages/frontend/public/.well-known/mcp/server-card.json`: updated public descriptions of both tools.
 
 No database, migration, service or business-logic changes. Payee ownership is still validated by the existing service code.
