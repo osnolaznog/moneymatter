@@ -66,6 +66,24 @@ const inputSchema = {
     .nullable()
     .optional()
     .describe('Replace tags. Pass null or empty array to clear all tags'),
+  payeeId: recordId()
+    .nullable()
+    .optional()
+    .describe('Payee ID to link (must belong to the account owner). Pass null to unlink. Setting it locks the payee against automatic re-resolution'),
+  externalReference: z
+    .string()
+    .max(255)
+    .nullable()
+    .optional()
+    .describe('External reference, e.g. a payment provider or bank operation ID (max 255 chars). Pass null to clear'),
+  externalUrl: z
+    .string()
+    .max(2048)
+    .url()
+    .regex(/^https?:\/\//i, 'Only http(s) URLs are allowed')
+    .nullable()
+    .optional()
+    .describe('External http(s) URL related to the transaction. Pass null to clear'),
   originalAmount: z
     .number()
     .nonnegative()
@@ -88,7 +106,7 @@ export function registerUpdateTransaction(server: McpServer) {
     'update_transaction',
     {
       description:
-        'Update an existing transaction by ID. All fields except id are optional — only provide what you want to change. Pass tagIds: null to clear all tags, or tagIds: [] to do the same. Pass splits: null to clear all splits. Use originalAmount + originalCurrencyCode to record what the purchase cost in its invoice currency when that differs from the account currency.',
+        'Update an existing transaction by ID. All fields except id are optional — only provide what you want to change. Pass tagIds: null to clear all tags, or tagIds: [] to do the same. Pass splits: null to clear all splits. Pass payeeId to link a payee (null to unlink), and externalReference / externalUrl to store provider references (null to clear). Use originalAmount + originalCurrencyCode to record what the purchase cost in its invoice currency when that differs from the account currency.',
       inputSchema,
     },
     async (args, extra) => {
@@ -121,6 +139,9 @@ export function registerUpdateTransaction(server: McpServer) {
                 note: s.note,
               })),
         tagIds: args.tagIds,
+        payeeId: args.payeeId,
+        externalReference: args.externalReference,
+        externalUrl: args.externalUrl,
         originalAmount: args.originalAmount != null ? Money.fromDecimal(args.originalAmount) : args.originalAmount,
         originalCurrencyCode: args.originalCurrencyCode,
       });
