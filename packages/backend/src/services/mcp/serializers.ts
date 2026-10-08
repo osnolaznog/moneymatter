@@ -73,6 +73,9 @@ export function slimTransactionsForMcp(txs: TransactionApiResponse[]) {
     transferNature: tx.transferNature,
     accountId: tx.accountId,
     categoryId: tx.categoryId,
+    payeeId: tx.payeeId,
+    externalReference: tx.externalReference,
+    externalUrl: tx.externalUrl,
     isPlanned: tx.isPlanned,
     ...(tx.tags && { tags: tx.tags.map((t) => ({ id: t.id, name: t.name })) }),
     ...(tx.splits && {
