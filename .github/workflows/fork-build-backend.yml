@@ -1,0 +1,143 @@
+# Builds the fork's backend image: the exact upstream commit behind the
+# official `letehaha/budget-tracker-be:latest` image (upstream `main`), plus
+# the fork's commits from FEATURE_BRANCH. Publishes it to GHCR with the same
+# `sha-<7 chars>` tag the official images use, so the official frontend and
+# this backend can be pinned to one IMAGE_TAG on the server.
+#
+# See FORK.md on the feature branch for what the fork changes.
+name: Fork - build backend image
+
+on:
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 'Rebuild even if an image for the current upstream commit already exists'
+        type: boolean
+        default: false
+  schedule:
+    - cron: '17 9 * * *' # daily, 06:17 Buenos Aires
+  push:
+    branches: [feat/mcp-transaction-payee-and-external-fields]
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: fork-build-backend
+  cancel-in-progress: false
+
+env:
+  FEATURE_BRANCH: feat/mcp-transaction-payee-and-external-fields
+  UPSTREAM_URL: https://github.com/letehaha/moneymatter.git
+  OFFICIAL_BE: docker.io/letehaha/budget-tracker-be
+  IMAGE: ghcr.io/${{ github.repository_owner }}/moneymatter-be
+
+jobs:
+  build:
+    if: github.repository_owner == 'osnolaznog'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch upstream and the fork's feature branch
+        run: |
+          git init -q src
+          cd src
+          git remote add upstream "$UPSTREAM_URL"
+          git remote add fork "https://github.com/${GITHUB_REPOSITORY}.git"
+          git fetch -q upstream main dev
+          git fetch -q fork "$FEATURE_BRANCH"
+          git checkout -q --detach upstream/main
+          BASE_SHA="$(git rev-parse HEAD)"
+          echo "BASE_SHA=$BASE_SHA" >> "$GITHUB_ENV"
+          echo "BASE_SHORT=${BASE_SHA::7}" >> "$GITHUB_ENV"
+
+      - name: Check that the official image for this commit is published
+        id: official
+        run: |
+          if docker manifest inspect "$OFFICIAL_BE:sha-$BASE_SHORT" > /dev/null 2>&1; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::Official image sha-$BASE_SHORT is not published yet. Nothing to build; the next run will retry."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Log in to GHCR
+        if: steps.official.outputs.ready == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Skip if this upstream commit is already built
+        id: existing
+        if: steps.official.outputs.ready == 'true'
+        env:
+          FORCE: ${{ github.event_name == 'push' || inputs.force == true }}
+        run: |
+          if [ "$FORCE" != "true" ] && docker manifest inspect "$IMAGE:sha-$BASE_SHORT" > /dev/null 2>&1; then
+            echo "::notice::$IMAGE:sha-$BASE_SHORT already exists. Skipping."
+            echo "build=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "build=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Apply the fork's commits on top of upstream main
+        if: steps.existing.outputs.build == 'true'
+        run: |
+          cd src
+          git config user.name "github-actions[bot]"
+          git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
+          COMMITS="$(git rev-list --reverse --no-merges "upstream/dev..fork/$FEATURE_BRANCH")"
+          echo "Applying:"; git log --oneline --no-walk $COMMITS
+          if ! git cherry-pick --keep-redundant-commits $COMMITS; then
+            echo "::error::The fork's commits no longer apply cleanly on upstream main ($BASE_SHORT). Re-apply the change by hand on the feature branch (see FORK.md). The server keeps running its current image."
+            exit 1
+          fi
+          echo "PATCH_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+
+      - uses: actions/setup-node@v4
+        if: steps.existing.outputs.build == 'true'
+        with:
+          node-version-file: src/.nvmrc
+
+      - name: Typecheck and MCP unit tests
+        if: steps.existing.outputs.build == 'true'
+        run: |
+          cd src
+          npm ci --ignore-scripts --no-audit --no-fund
+          cd packages/backend
+          npm run typecheck
+          npx cross-env NODE_ENV=test TZ=UTC jest -c jest.config.unit.ts src/services/mcp
+
+      - uses: docker/setup-buildx-action@v3
+        if: steps.existing.outputs.build == 'true'
+
+      - name: Build and push
+        if: steps.existing.outputs.build == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: src
+          file: src/self-hosting/backend/Dockerfile
+          platforms: linux/amd64
+          push: true
+          build-args: SENTRY_RELEASE=${{ env.BASE_SHA }}
+          tags: |
+            ${{ env.IMAGE }}:latest
+            ${{ env.IMAGE }}:sha-${{ env.BASE_SHORT }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ env.PATCH_SHA }}
+            org.opencontainers.image.description=MoneyMatter backend (upstream ${{ env.BASE_SHORT }}) with the osnolaznog fork's MCP changes
+
+      - name: Summary
+        if: steps.existing.outputs.build == 'true'
+        run: |
+          {
+            echo "### Published \`$IMAGE:sha-$BASE_SHORT\`"
+            echo ""
+            echo "- Upstream main: \`$BASE_SHA\`"
+            echo "- With fork commits: \`$PATCH_SHA\`"
+            echo ""
+            echo "On the server, set \`IMAGE_TAG=sha-$BASE_SHORT\` in \`/opt/moneymatter/.env\`, then \`docker compose pull && docker compose up -d\`."
+          } >> "$GITHUB_STEP_SUMMARY"
