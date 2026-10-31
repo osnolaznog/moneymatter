@@ -64,6 +64,18 @@ const inputSchema = {
     .describe('Split the transaction across multiple categories'),
   tagIds: z.array(recordId()).optional().describe('Tag IDs to assign to this transaction'),
   payeeId: recordId().optional().describe('Payee ID to assign'),
+  externalReference: z
+    .string()
+    .max(255)
+    .optional()
+    .describe('External reference for the transaction, e.g. a payment provider or bank operation ID (max 255 chars)'),
+  externalUrl: z
+    .string()
+    .max(2048)
+    .url()
+    .regex(/^https?:\/\//i, 'Only http(s) URLs are allowed')
+    .optional()
+    .describe('External http(s) URL related to the transaction, e.g. a receipt or order page'),
   isPlanned: z.boolean().optional().describe('Mark the transaction as planned rather than an already-happened record'),
   originalAmount: z
     .number()
@@ -90,7 +102,7 @@ export function registerCreateTransaction(server: McpServer) {
     'create_transaction',
     {
       description:
-        'Create a new transaction (income, expense, or transfer). Requires accountId, amount (decimal), transactionType, and transferNature. paymentType is optional and defaults to the default payment type of the account. For transfers, also provide destinationAccountId and destinationAmount. Use splits to categorize portions of the amount. Use originalAmount + originalCurrencyCode to record what the purchase cost in its invoice currency when that differs from the account currency. Use paymentLegs to pay one purchase from several accounts.',
+        'Create a new transaction (income, expense, or transfer). Requires accountId, amount (decimal), transactionType, and transferNature. paymentType is optional and defaults to the default payment type of the account. For transfers, also provide destinationAccountId and destinationAmount. Use splits to categorize portions of the amount. Use originalAmount + originalCurrencyCode to record what the purchase cost in its invoice currency when that differs from the account currency. Use paymentLegs to pay one purchase from several accounts. Use externalReference / externalUrl to store provider references.',
       inputSchema,
     },
     async (args, extra) => {
@@ -116,6 +128,8 @@ export function registerCreateTransaction(server: McpServer) {
           splits: args.splits,
           tagIds: args.tagIds,
           payeeId: args.payeeId,
+          externalReference: args.externalReference,
+          externalUrl: args.externalUrl,
           isPlanned: args.isPlanned,
           originalAmount: args.originalAmount,
           originalCurrencyCode: args.originalCurrencyCode,
