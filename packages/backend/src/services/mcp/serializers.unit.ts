@@ -134,9 +134,12 @@ describe('MCP serializers', () => {
           'amount',
           'categoryId',
           'currencyCode',
+          'externalReference',
+          'externalUrl',
           'id',
           'isPlanned',
           'note',
+          'payeeId',
           'refAmount',
           'splits',
           'tags',
@@ -378,7 +381,8 @@ describe('MCP serializers', () => {
 
     it.each([
       { overrides: { status: 'paused' }, expected: 'paused' },
-      { overrides: { achievedAt: '2026-10-01T00:00:00.000Z' }, expected: 'reached' },
+      // Relative to now so the goal stays inside its 30-day reachedHoldDays window
+      { overrides: { achievedAt: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString() }, expected: 'reached' },
     ])('reports the displayed status: $expected', ({ overrides, expected }) => {
       const [slim] = slimGoalsForMcp({ goals: [{ ...goal, ...overrides } as GoalModel], accountNames: new Map() });
 
