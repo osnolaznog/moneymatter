@@ -33,6 +33,23 @@ MCP clients such as Claude had to put provider references (like a MODO operation
 
 `.github/workflows/fork-build-backend.yml` runs daily on `dev` (06:17 Buenos Aires). Once the official backend image for upstream `main` is published, it cherry-picks the commits on `feat/mcp-transaction-payee-and-external-fields` (everything after upstream `dev`) onto upstream `main`, runs the backend typecheck and the `src/services/mcp` unit tests, and publishes `ghcr.io/osnolaznog/moneymatter-be` tagged `latest` and `sha-<upstream main short SHA>`. If the commits no longer apply, the run fails and the server keeps its current image.
 
+### Deploying to the server
+
+The server (Hostinger VPS, `/opt/moneymatter`, compose project `budget-tracker-prod`) runs this backend image with the official frontend image. Both are pinned to one tag through `IMAGE_TAG` in `/opt/moneymatter/.env`. To deploy a new build:
+
+```bash
+cd /opt/moneymatter
+ls -lt backups | head -3                      # today's 04:15 backup must exist
+grep '^IMAGE_TAG' .env                        # note the current tag for rollback
+sed -i 's/^IMAGE_TAG=.*/IMAGE_TAG=sha-<new>/' .env
+docker compose pull && docker compose up -d
+docker compose ps                             # wait for healthy
+```
+
+Rollback: put the previous tag back in `.env` and repeat `pull` + `up -d`. The backend runs pending migrations on start, so roll back across migrations only together with a database restore from `backups/`.
+
+After a backend restart, existing MCP sessions are invalid ("Invalid or expired session ID"); reconnect the MCP client.
+
 ## Keeping in sync with upstream
 
 1. Sync `dev` with upstream (GitHub's "Sync fork" button, or `git fetch upstream && git rebase upstream/dev`).
@@ -42,7 +59,7 @@ MCP clients such as Claude had to put provider references (like a MODO operation
 
 ## Sync log
 
-- 2026-10-31: the daily build had failed since 2026-10-19, when upstream changed both MCP transaction tools (native `payeeId`, optional `paymentType`, `paymentLegs`). The feature branch was rebuilt on upstream `dev` (`cc5d8901`) with upstream's `payeeId` and only the fork's external fields on top. Verified on upstream `main` v0.33.7 (`cf716812`): commits apply cleanly, `npm run typecheck` passes, `src/services/mcp` unit tests pass (62/62). Previous branch kept as `backup/feat/mcp-transaction-payee-and-external-fields-2026-10-08`.
+- 2026-10-31: the daily build had failed since 2026-10-19, when upstream changed both MCP transaction tools (native `payeeId`, optional `paymentType`, `paymentLegs`). The feature branch was rebuilt on upstream `dev` (`cc5d8901`) with upstream's `payeeId` and only the fork's external fields on top. Verified on upstream `main` v0.33.7 (`cf716812`): commits apply cleanly, `npm run typecheck` passes, `src/services/mcp` unit tests pass (62/62). Previous branch kept as `backup/feat/mcp-transaction-payee-and-external-fields-2026-10-08`. Server moved from `sha-640811b` to `sha-cf71681`; all containers healthy.
 
 ## Upstream PR
 
