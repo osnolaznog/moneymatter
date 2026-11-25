@@ -167,6 +167,8 @@ describe('MCP serializers', () => {
           'categoryId',
           'currencyCode',
           'excludeFromStats',
+          'externalReference',
+          'externalUrl',
           'id',
           'isPlanned',
           'note',
