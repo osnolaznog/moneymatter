@@ -4,24 +4,18 @@ This fork of [letehaha/moneymatter](https://github.com/letehaha/moneymatter) add
 
 ## What changed
 
-The MCP tools `create_transaction` and `update_transaction` accept two fields that the REST API and the transactions service already support:
+Tools that return transactions through the shared MCP serializer (for example `search_transactions`) include `externalReference` and `externalUrl` in each transaction, so clients can read back what they wrote. Upstream's serializer returns `payeeId` and `payee` but not the external fields.
 
-| Field | Type | `create_transaction` | `update_transaction` |
-|---|---|---|---|
-| `externalReference` | string, max 255 | Stores an external ID, e.g. a MODO or bank operation ID. | Same. `null` clears it. |
-| `externalUrl` | http(s) URL, max 2048 | Stores a related URL, e.g. a receipt or order page. | Same. `null` clears it. |
+What comes from upstream, not from this fork:
 
-Tools that return transactions through the shared MCP serializer (for example `search_transactions`) include `payeeId`, `externalReference` and `externalUrl` in each transaction, so clients can read back what they wrote.
-
-`payeeId` on `create_transaction` / `update_transaction` comes from upstream, not from this fork.
+- `payeeId` on `create_transaction` / `update_transaction` and in slim transactions (upstream since 2026-10-19).
+- `externalReference` (string, max 255) and `externalUrl` (http(s) URL) on `create_transaction` / `update_transaction`, `null` clears them on update (upstream since v0.34, `feat(mcp): add tools for the rest of the REST API`).
+- The goal "reached" status test fix (upstream uses a date relative to today).
 
 Files touched:
 
-- `packages/backend/src/services/mcp/tools/create-transaction.ts`: new schema fields, passed to `deserializeCreateTransaction`.
-- `packages/backend/src/services/mcp/tools/update-transaction.ts`: new schema fields, passed to `updateTransaction`.
-- `packages/backend/src/services/mcp/serializers.ts` (+ its unit test): the three fields added to `slimTransactionsForMcp`.
-- `packages/frontend/public/.well-known/mcp/server-card.json`: public descriptions of both tools mention the external fields.
-- `packages/backend/src/services/mcp/serializers.unit.ts`: the goal "reached" status test uses a date relative to today instead of a fixed date. Upstream bug: with a fixed date the test fails once the 30-day hold window passes.
+- `packages/backend/src/services/mcp/serializers.ts`: `externalReference` and `externalUrl` added to `slimTransactionsForMcp`.
+- `packages/backend/src/services/mcp/serializers.unit.ts`: expected keys updated.
 
 No database, migration, service or business-logic changes.
 
@@ -69,6 +63,8 @@ After a backend restart, existing MCP sessions are invalid ("Invalid or expired 
 ## Sync log
 
 - 2026-10-31: the daily build had failed since 2026-10-19, when upstream changed both MCP transaction tools (native `payeeId`, optional `paymentType`, `paymentLegs`). The feature branch was rebuilt on upstream `dev` (`cc5d8901`) with upstream's `payeeId` and only the fork's external fields on top. Verified on upstream `main` v0.33.7 (`cf716812`): commits apply cleanly, `npm run typecheck` passes, `src/services/mcp` unit tests pass (62/62). Previous branch kept as `backup/feat/mcp-transaction-payee-and-external-fields-2026-10-08`. Server moved from `sha-640811b` to `sha-cf71681`; all containers healthy. Same day: Traefik burst raised to 300, 72 Ubuntu packages upgraded (Docker and `libpq5` held), VPS rebooted; MoneyMatter and n8n back up and healthy.
+
+- 2026-11-25: the daily build had failed since 2026-11-02. First upstream fixed the goal "reached" test itself (conflict on the fork's test commit), then upstream v0.34 added `externalReference` / `externalUrl` to both MCP transaction tools (conflicts in `create-transaction.ts`, `update-transaction.ts` and `server-card.json`). The feature branch was rebuilt on upstream `dev` (`22a7293c`) keeping only the serializer change and the docs. Verified on upstream `main` v0.34.2 (`91ca3ca4`): commits apply cleanly, `npm run typecheck` passes, `src/services/mcp` unit tests pass (1160/1160). Previous branch kept as `backup/feat/mcp-transaction-payee-and-external-fields-2026-11-25`.
 
 ## Upstream
 
